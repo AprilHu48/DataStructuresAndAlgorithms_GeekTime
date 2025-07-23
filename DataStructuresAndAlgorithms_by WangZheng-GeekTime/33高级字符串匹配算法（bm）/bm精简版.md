@@ -59,3 +59,142 @@
 
 
 思考:直接能否通过筛选si小于xi,我们能否继续向前查找筛选一个si大于xi的字符下标进行滑动?
+
+### 代码实现
+
+#### 坏字符实现
+
+假设字符集不大,每个字符长度为一字节.我们可以运用散列表,创建一个大小256的数组(bc),下标为对应字符ascll码,如字符a的ascll码是97,遍历模式串,找到a在模式串最后出现的位置为3号位,将这个位置记录下来,bc[97]=3,一次类推,记录模式串所有字符最后出现的位置.
+
+![bmzifuchuan2025-07-17 122000](assets/bmzifuchuan2025-07-17 122000.jpg)
+
+```
+private static final int SIZE = 256; 
+private void generateBC(char[] b, int m, int[] bc) {//b 是模式串，m 是模式串的长度
+  for (int i = 0; i < SIZE; ++i) {
+    bc[i] = -1; // 初始化bc
+  }
+  for (int i = 0; i < m; ++i) {
+    int ascii = (int)b[i]; // 计算b[i]的ASCII值
+    bc[ascii] = i;
+  }
+}
+```
+
+把 BM 算法代码的大框架写好，先不考虑好后缀规则，仅用坏字符规则，并且不考虑 si-xi 计算得到的移动位数可能会出现负数的情况。
+
+```
+public int bm(char[] a, int n, char[] b, int m) {//n为主串长度，m为模式串长度，a为主串，b为模式串
+  int[] bc = new int[SIZE];
+  generateBC(b, m, bc); // 构建坏字符散列表
+  int i = 0; // i表示当前模式串与主串对齐的第一个字符的下标位置（如开始时模式串首字母对齐主串第一个字母，也就是在主串下标为0的位置，然后模式串逐渐往后移动）
+  while (i <= n - m) {//模式串从与主串头部对齐开始，进行匹配
+    int j;
+    for (j = m - 1; j >= 0; --j) { // 模式串从后往前匹配
+      if (a[i+j] != b[j]) break; // 匹配到坏字符,在模式串中的下标是j
+    }
+    if (j < 0) {
+      return i; // 匹配成功，返回主串与模式串第一个匹配的字符的位置
+    }
+    //i是当前模式串首字符,对齐主串对应字符的下标,j是模式串最后匹配失败的字符下标,所以a[i+j]等价于主串坏字符下标,散列表查询坏字符在模式串中最后出现的位置，即bc[(int)a[i+j]]，将模式串往后滑动j-bc[(int)a[i+j]]位
+    i = i + (j - bc[(int)a[i+j]]); 
+  }
+  return -1;
+}
+```
+
+![bm12](assets/bm12.jpg)
+
+#### 好后缀实现
+
+**好后缀**的处理规则中最核心的内容：
+
+* 在模式串中，查找跟好后缀匹配的另一个子串；
+* 在好后缀的后缀子串中，查找最长的、能跟模式串前缀子串匹配的后缀子串；
+
+想要 BM 算法的效率很高,就要预先计算好**模式串的每个后缀子串，对应的另一个可匹配子串的位置**.
+
+因为后缀子串的最后一个字符的位置是固定的，下标为 m-1，我们只需要记录长度就可以了。通过长度，我们可以确定一个唯一的后缀子串。
+
+![bm13](assets/bm13.jpg)
+
+引入最关键的变量 suffix 数组。suffix 数组的下标 k,对应上面的后缀子串长度,它的值表示**在模式串中跟好后缀{u}相匹配的子串{u*}的起始下标**(如这里后缀子串'ab',长度是2,对应suffix[2]位置,在模式串起始位置1能匹配上,所以suffix[2]=1,如果没匹配上就赋值-1)
+
+![bm14](assets/bm14.jpg)
+
+有多个可匹配子串时,为了避免模式串往后滑动得过头了，我们肯定要选择模式串中最靠后的那个.
+
+我们还要在好后缀的后缀子串中，查找最长的能跟模式串前缀子串匹配的后缀子串。
+
+这里创建prefix 数组,记录**模式串的后缀子串是否能匹配模式串的前缀子串**
+
+![bm15](assets/bm15.jpg)
+
+如上图,我们只需要拿模式串的后缀子串一次与前缀比较是否匹配即可.在实际使用时,假设此刻匹配上了好后缀"bcab",我们就要从prefix数组长度4的位置,查找一个比它长度更小的且能与前缀匹配的后缀子串,(**这个匹配的后缀子串同样也就是好后缀的子串**),这里我们可以看出是"cab"这个后缀子串,这时我们就要滑动模式串使其前缀对齐滑动之前前模式串后缀的这个位置.
+
+![微信图片_20250723123322](assets/微信图片_20250723123322.jpg)
+
+我们把 suffix 数组和 prefix 数组的计算过程，用代码实现出来，就是下面这个样子：
+
+```
+// b表示模式串，m表示长度，suffix，prefix数组事先申请好了
+private void generateGS(char[] b, int m, int[] suffix, boolean[] prefix) {
+  for (int i = 0; i < m; ++i) { // 初始化
+    suffix[i] = -1;
+    prefix[i] = false;
+  }
+  for (int i = 0; i < m - 1; ++i) { //suffix匹配实现,预计算模式串的每个后缀子串，对应的另一个可匹配子串的位置
+    int j = i;
+    int k = 0; // 公共后缀子串长度
+    while (j >= 0 && b[j] == b[m-1-k]) { 
+      --j;
+      ++k;
+      suffix[k] = j+1; 
+    }
+    if (j == -1) prefix[k] = true; //该for循环完全匹配上了，则公共后缀子串也是模式串的前缀子串，
+  }
+}
+```
+
+我们把好后缀规则加到前面的代码框架里，就可以得到 BM 算法的完整版代码实现。
+
+```
+// a,b表示主串和模式串；n，m表示主串和模式串的长度。
+public int bm(char[] a, int n, char[] b, int m) {
+  int[] bc = new int[SIZE]; // 记录模式串中每个字符最后出现的位置
+  generateBC(b, m, bc); // 构建坏字符哈希表
+  int[] suffix = new int[m];
+  boolean[] prefix = new boolean[m];
+  generateGS(b, m, suffix, prefix);
+  int i = 0; // j表示主串与模式串匹配的第一个字符
+  while (i <= n - m) {
+    int j;
+    for (j = m - 1; j >= 0; --j) { // 模式串从后往前匹配
+      if (a[i+j] != b[j]) break; // 坏字符对应模式串中的下标是j
+    }
+    if (j < 0) {
+      return i; // 匹配成功，返回主串与模式串第一个匹配的字符的位置
+    }
+    int x = j - bc[(int)a[i+j]];//坏字符计算出的滑动位数
+    int y = 0;//好后缀计算的滑动位数
+    if (j < m-1) { // 如果有好后缀的话
+      y = moveByGS(j, m, suffix, prefix);
+    }
+    i = i + Math.max(x, y);//好后缀，坏字符两者取大的那个值，向后滑动
+  }
+  return -1;
+}
+
+// j表示坏字符对应的模式串中的字符下标; m表示模式串长度
+private int moveByGS(int j, int m, int[] suffix, boolean[] prefix) {
+  int k = m - 1 - j; // 好后缀长度
+  if (suffix[k] != -1) return j - suffix[k] +1;
+  for (int r = j+2; r <= m-1; ++r) {
+    if (prefix[m-r] == true) {
+      return r;
+    }
+  }
+  return m;
+}
+```
+
